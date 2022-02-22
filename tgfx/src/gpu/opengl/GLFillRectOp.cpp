@@ -18,51 +18,98 @@
 
 #include "GLFillRectOp.h"
 
+#include "gpu/Quad.h"
 #include "gpu/QuadPerEdgeAAGeometryProcessor.h"
 
 namespace tgfx {
 std::unique_ptr<GeometryProcessor> GLFillRectOp::getGeometryProcessor(const DrawArgs& args) {
-  return QuadPerEdgeAAGeometryProcessor::Make(
-      args.renderTarget->width(), args.renderTarget->height(), args.viewMatrix, args.aa);
+  return QuadPerEdgeAAGeometryProcessor::Make(args.renderTarget->width(),
+                                              args.renderTarget->height(), args.aa);
 }
 
-std::vector<float> GLFillRectOp::vertices(const DrawArgs& args) {
-  auto bounds = args.rectToDraw;
-  auto normalBounds = Rect::MakeLTRB(0, 0, 1, 1);
-  // Vertex coordinates are arranged in a 2D pixel coordinate system, and textures are arranged
-  // according to a texture coordinate system (0 - 1).
-  if (args.aa != AAType::Coverage) {
-    return {
-        bounds.right, bounds.bottom, normalBounds.right, normalBounds.bottom,
-        bounds.right, bounds.top,    normalBounds.right, normalBounds.top,
-        bounds.left,  bounds.bottom, normalBounds.left,  normalBounds.bottom,
-        bounds.left,  bounds.top,    normalBounds.left,  normalBounds.top,
-    };
-  }
-  auto scale = sqrtf(args.viewMatrix.getScaleX() * args.viewMatrix.getScaleX() +
-                     args.viewMatrix.getSkewY() * args.viewMatrix.getSkewY());
-  // we want the new edge to be .5px away from the old line.
-  auto padding = 0.5f / scale;
-  auto insetBounds = bounds.makeInset(padding, padding);
-  auto outsetBounds = bounds.makeOutset(padding, padding);
-
-  auto normalPadding = Point::Make(padding / bounds.width(), padding / bounds.height());
-  auto normalInset = normalBounds.makeInset(normalPadding.x, normalPadding.y);
-  auto normalOutset = normalBounds.makeOutset(normalPadding.x, normalPadding.y);
+std::vector<float> GetVertices(const Quad& insetQuad, const Quad& normalInsetQuad,
+                               const Quad& outsetQuad, const Quad& normalOutsetQuad) {
+  const auto& insetLT = insetQuad.point(0);
+  const auto& insetLB = insetQuad.point(1);
+  const auto& insetRT = insetQuad.point(2);
+  const auto& insetRB = insetQuad.point(3);
+  const auto& outsetLT = outsetQuad.point(0);
+  const auto& outsetLB = outsetQuad.point(1);
+  const auto& outsetRT = outsetQuad.point(2);
+  const auto& outsetRB = outsetQuad.point(3);
   return {
-      insetBounds.left,   insetBounds.top,     1.0f, normalInset.left,   normalInset.top,
-      insetBounds.left,   insetBounds.bottom,  1.0f, normalInset.left,   normalInset.bottom,
-      insetBounds.right,  insetBounds.top,     1.0f, normalInset.right,  normalInset.top,
-      insetBounds.right,  insetBounds.bottom,  1.0f, normalInset.right,  normalInset.bottom,
-      outsetBounds.left,  outsetBounds.top,    0.0f, normalOutset.left,  normalOutset.top,
-      outsetBounds.left,  outsetBounds.bottom, 0.0f, normalOutset.left,  normalOutset.bottom,
-      outsetBounds.right, outsetBounds.top,    0.0f, normalOutset.right, normalOutset.top,
-      outsetBounds.right, outsetBounds.bottom, 0.0f, normalOutset.right, normalOutset.bottom,
+      insetLT.x,  insetLT.y,  1.0f, normalInsetQuad.point(0).x,  normalInsetQuad.point(0).y,
+      insetLB.x,  insetLB.y,  1.0f, normalInsetQuad.point(1).x,  normalInsetQuad.point(1).y,
+      insetRT.x,  insetRT.y,  1.0f, normalInsetQuad.point(2).x,  normalInsetQuad.point(2).y,
+      insetRB.x,  insetRB.y,  1.0f, normalInsetQuad.point(3).x,  normalInsetQuad.point(3).y,
+      outsetLT.x, outsetLT.y, 0.0f, normalOutsetQuad.point(0).x, normalOutsetQuad.point(0).y,
+      outsetLB.x, outsetLB.y, 0.0f, normalOutsetQuad.point(1).x, normalOutsetQuad.point(1).y,
+      outsetRT.x, outsetRT.y, 0.0f, normalOutsetQuad.point(2).x, normalOutsetQuad.point(2).y,
+      outsetRB.x, outsetRB.y, 0.0f, normalOutsetQuad.point(3).x, normalOutsetQuad.point(3).y,
   };
 }
 
-std::unique_ptr<GLFillRectOp> GLFillRectOp::Make() {
-  return std::make_unique<GLFillRectOp>();
+std::vector<float> GLFillRectOp::vertices(const DrawArgs& args) {
+  auto normalBounds = Rect::MakeLTRB(0, 0, 1, 1);
+  std::vector<float> vertexes;
+  // Vertex coordinates are arranged in a 2D pixel coordinate system, and textures are arranged
+  // according to a texture coordinate system (0 - 1).
+  if (args.aa != AAType::Coverage) {
+    for (size_t i = 0; i < rects.size(); ++i) {
+      auto quad = Quad::MakeFromRect(rects[i], viewMatrices[i]);
+      auto localQuad = Quad::MakeFromRect(normalBounds, localMatrices[i]);
+      std::vector<float> vert = {
+          quad.point(3).x, quad.point(3).y, localQuad.point(3).x, localQuad.point(3).y,
+          quad.point(2).x, quad.point(2).y, localQuad.point(2).x, localQuad.point(2).y,
+          quad.point(1).x, quad.point(1).y, localQuad.point(1).x, localQuad.point(1).y,
+          quad.point(0).x, quad.point(0).y, localQuad.point(0).x, localQuad.point(0).y,
+      };
+      vertexes.insert(vertexes.end(), vert.begin(), vert.end());
+    }
+  } else {
+    for (size_t i = 0; i < rects.size(); ++i) {
+      auto scale = sqrtf(viewMatrices[i].getScaleX() * viewMatrices[i].getScaleX() +
+                         viewMatrices[i].getSkewY() * viewMatrices[i].getSkewY());
+      // we want the new edge to be .5px away from the old line.
+      auto padding = 0.5f / scale;
+      auto insetBounds = rects[i].makeInset(padding, padding);
+      auto insetQuad = Quad::MakeFromRect(insetBounds, viewMatrices[i]);
+      auto outsetBounds = rects[i].makeOutset(padding, padding);
+      auto outsetQuad = Quad::MakeFromRect(outsetBounds, viewMatrices[i]);
+
+      auto normalPadding = Point::Make(padding / rects[i].width(), padding / rects[i].height());
+      auto normalInset = normalBounds.makeInset(normalPadding.x, normalPadding.y);
+      auto normalInsetQuad = Quad::MakeFromRect(normalInset, localMatrices[i]);
+      auto normalOutset = normalBounds.makeOutset(normalPadding.x, normalPadding.y);
+      auto normalOutsetQuad = Quad::MakeFromRect(normalOutset, localMatrices[i]);
+
+      auto vert = GetVertices(insetQuad, normalInsetQuad, outsetQuad, normalOutsetQuad);
+      vertexes.insert(vertexes.end(), vert.begin(), vert.end());
+    }
+  }
+  return vertexes;
+}
+
+std::unique_ptr<GLFillRectOp> GLFillRectOp::Make(const Rect& rect, const Matrix& viewMatrix) {
+  return std::unique_ptr<GLFillRectOp>(new GLFillRectOp({rect}, {viewMatrix}, {Matrix::I()}));
+}
+
+std::unique_ptr<GLFillRectOp> GLFillRectOp::Make(const std::vector<Rect>& rects,
+                                                 const std::vector<Matrix>& viewMatrices,
+                                                 const std::vector<Matrix>& localMatrices) {
+  return std::unique_ptr<GLFillRectOp>(new GLFillRectOp(rects, viewMatrices, localMatrices));
+}
+
+GLFillRectOp::GLFillRectOp(std::vector<Rect> rects, std::vector<Matrix> viewMatrices,
+                           std::vector<Matrix> localMatrices)
+    : rects(std::move(rects)),
+      viewMatrices(std::move(viewMatrices)),
+      localMatrices(std::move(localMatrices)) {
+  auto bounds = Rect::MakeEmpty();
+  for (size_t i = 0; i < rects.size(); ++i) {
+    bounds.join(viewMatrices[i].mapRect(rects[i]));
+  }
+  setBounds(bounds);
 }
 
 static constexpr size_t kIndicesPerAAFillRect = 30;
@@ -78,9 +125,28 @@ static constexpr uint16_t gFillAARectIdx[] = {
 // clang-format on
 
 std::shared_ptr<GLBuffer> GLFillRectOp::getIndexBuffer(const DrawArgs& args) {
+  if (rects.size() > 1) {
+    std::vector<uint16_t> indexes;
+    for (size_t i = 0; i < rects.size(); ++i) {
+      if (args.aa != AAType::Coverage) {
+        indexes.push_back(i * 4);
+        indexes.push_back(i * 4 + 1);
+        indexes.push_back(i * 4 + 2);
+        indexes.push_back(i * 4 + 1);
+        indexes.push_back(i * 4 + 2);
+        indexes.push_back(i * 4 + 3);
+      } else {
+        for (auto j : gFillAARectIdx) {
+          indexes.push_back(i * 8 + j);
+        }
+      }
+    }
+    return GLBuffer::Make(args.context, &indexes[0], indexes.size());
+  }
   if (args.aa == AAType::Coverage) {
     return GLBuffer::Make(args.context, gFillAARectIdx, kIndicesPerAAFillRect);
   }
   return nullptr;
 }
+
 }  // namespace tgfx

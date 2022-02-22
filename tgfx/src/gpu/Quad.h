@@ -18,31 +18,24 @@
 
 #pragma once
 
-#include "GLDrawer.h"
-
-#include "GLBuffer.h"
+#include "core/Matrix.h"
+#include "core/Rect.h"
 
 namespace tgfx {
-class GLFillRectOp : public GLDrawOp {
+class Quad {
  public:
-  static std::unique_ptr<GLFillRectOp> Make(const Rect& rect, const Matrix& viewMatrix);
+  static Quad MakeFromRect(const Rect& rect, const Matrix& matrix);
 
-  static std::unique_ptr<GLFillRectOp> Make(const std::vector<Rect>& rects,
-                                            const std::vector<Matrix>& viewMatrices,
-                                            const std::vector<Matrix>& localMatrices);
+  const Point& point(size_t i) const {
+    return points[i];
+  }
 
-  std::unique_ptr<GeometryProcessor> getGeometryProcessor(const DrawArgs& args) override;
-
-  std::vector<float> vertices(const DrawArgs& args) override;
-
-  std::shared_ptr<GLBuffer> getIndexBuffer(const DrawArgs& args) override;
+  Rect bounds() const;
 
  private:
-  GLFillRectOp(std::vector<Rect> rects, std::vector<Matrix> viewMatrices,
-               std::vector<Matrix> localMatrices);
+  explicit Quad(std::vector<Point> points) : points(std::move(points)) {
+  }
 
-  std::vector<Rect> rects;
-  std::vector<Matrix> viewMatrices;
-  std::vector<Matrix> localMatrices;
+  std::vector<Point> points;
 };
 }  // namespace tgfx

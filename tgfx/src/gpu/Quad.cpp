@@ -16,33 +16,24 @@
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#pragma once
-
-#include "GLDrawer.h"
-
-#include "GLBuffer.h"
+#include "Quad.h"
 
 namespace tgfx {
-class GLFillRectOp : public GLDrawOp {
- public:
-  static std::unique_ptr<GLFillRectOp> Make(const Rect& rect, const Matrix& viewMatrix);
+Quad Quad::MakeFromRect(const Rect& rect, const Matrix& matrix) {
+  std::vector<Point> points;
+  points.push_back(Point::Make(rect.left, rect.top));
+  points.push_back(Point::Make(rect.left, rect.bottom));
+  points.push_back(Point::Make(rect.right, rect.top));
+  points.push_back(Point::Make(rect.right, rect.bottom));
+  matrix.mapPoints(&points[0], 4);
+  return Quad(points);
+}
 
-  static std::unique_ptr<GLFillRectOp> Make(const std::vector<Rect>& rects,
-                                            const std::vector<Matrix>& viewMatrices,
-                                            const std::vector<Matrix>& localMatrices);
-
-  std::unique_ptr<GeometryProcessor> getGeometryProcessor(const DrawArgs& args) override;
-
-  std::vector<float> vertices(const DrawArgs& args) override;
-
-  std::shared_ptr<GLBuffer> getIndexBuffer(const DrawArgs& args) override;
-
- private:
-  GLFillRectOp(std::vector<Rect> rects, std::vector<Matrix> viewMatrices,
-               std::vector<Matrix> localMatrices);
-
-  std::vector<Rect> rects;
-  std::vector<Matrix> viewMatrices;
-  std::vector<Matrix> localMatrices;
-};
+Rect Quad::bounds() const {
+  auto min = [](const float c[4]) { return std::min(std::min(c[0], c[1]), std::min(c[2], c[3])); };
+  auto max = [](const float c[4]) { return std::max(std::max(c[0], c[1]), std::max(c[2], c[3])); };
+  float x[4] = {points[0].x, points[1].x, points[2].x, points[3].x};
+  float y[4] = {points[0].y, points[1].y, points[2].y, points[3].y};
+  return {min(x), min(y), max(x), max(y)};
+}
 }  // namespace tgfx

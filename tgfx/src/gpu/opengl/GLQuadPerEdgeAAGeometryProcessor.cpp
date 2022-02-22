@@ -29,15 +29,11 @@ void GLQuadPerEdgeAAGeometryProcessor::emitCode(EmitArgs& args) {
 
   varyingHandler->emitAttributes(*geometryProcessor);
 
-  std::string matrixUniformName;
-  matrixUniform = uniformHandler->addUniform(ShaderFlags::Vertex, ShaderVar::Type::Float3x3,
-                                             "Matrix", &matrixUniformName);
-  vertBuilder->codeAppendf("vec3 position = %s * vec3(%s.xy, 1);", matrixUniformName.c_str(),
-                           geometryProcessor->position.name().c_str());
   std::string screenSizeUniformName;
   screenSizeUniform = uniformHandler->addUniform(ShaderFlags::Vertex, ShaderVar::Type::Float2,
                                                  "ScreenSize", &screenSizeUniformName);
-  vertBuilder->codeAppendf("vec2 clipSpace = (position.xy / %s) * 2.0 - 1.0;",
+  vertBuilder->codeAppendf("vec2 clipSpace = (%s.xy / %s) * 2.0 - 1.0;",
+                           geometryProcessor->position.name().c_str(),
                            screenSizeUniformName.c_str());
   auto position = ShaderVar("clipSpace", ShaderVar::Type::Float2, ShaderVar::TypeModifier::None);
 
@@ -65,16 +61,11 @@ void GLQuadPerEdgeAAGeometryProcessor::setData(const ProgramDataManager& program
                                                FPCoordTransformIter* transformIter) {
   const auto& gp = static_cast<const QuadPerEdgeAAGeometryProcessor&>(geometryProcessor);
   setTransformDataHelper(Matrix::I(), programDataManager, transformIter);
-  if (!updated || viewMatrixPrev != gp.viewMatrix) {
-    viewMatrixPrev = gp.viewMatrix;
-    programDataManager.setMatrix(matrixUniform, gp.viewMatrix);
-  }
-  if (!updated || widthPrev != gp.width || heightPrev != gp.height) {
+  if (widthPrev != gp.width || heightPrev != gp.height) {
     widthPrev = gp.width;
     heightPrev = gp.height;
     programDataManager.set2f(screenSizeUniform, static_cast<float>(gp.width),
                              static_cast<float>(gp.height));
   }
-  updated = true;
 }
 }  // namespace tgfx

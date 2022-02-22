@@ -24,15 +24,13 @@
 namespace tgfx {
 std::unique_ptr<QuadPerEdgeAAGeometryProcessor> QuadPerEdgeAAGeometryProcessor::Make(int width,
                                                                                      int height,
-                                                                                     Matrix matrix,
                                                                                      AAType aa) {
   return std::unique_ptr<QuadPerEdgeAAGeometryProcessor>(
-      new QuadPerEdgeAAGeometryProcessor(width, height, matrix, aa));
+      new QuadPerEdgeAAGeometryProcessor(width, height, aa));
 }
 
-QuadPerEdgeAAGeometryProcessor::QuadPerEdgeAAGeometryProcessor(int width, int height, Matrix matrix,
-                                                               AAType aa)
-    : width(width), height(height), viewMatrix(matrix), aa(aa) {
+QuadPerEdgeAAGeometryProcessor::QuadPerEdgeAAGeometryProcessor(int width, int height, AAType aa)
+    : width(width), height(height), aa(aa) {
   if (aa == AAType::Coverage) {
     position = {"aPositionWithCoverage", ShaderVar::Type::Float3};
   } else {
