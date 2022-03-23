@@ -33,8 +33,7 @@
 #include "rendering/graphics/Picture.h"
 #include "rendering/graphics/Snapshot.h"
 #include "rendering/layers/PAGStage.h"
-#include "rendering/readers/BitmapSequenceReader.h"
-#include "video/DecodingPolicy.h"
+#include "rendering/sequences/SequenceReaderFactory.h"
 
 namespace pag {
 class RenderCache : public Performance {
@@ -102,11 +101,7 @@ class RenderCache : public Performance {
    */
   void removeSnapshot(ID assetID);
 
-  TextAtlas* getTextAtlas(ID assetID);
-
   TextAtlas* getTextAtlas(const TextGlyphs* textGlyphs);
-
-  void removeTextAtlas(ID assetID);
 
   /**
    * Prepares a bitmap task for next getImageBuffer() call.
@@ -125,9 +120,9 @@ class RenderCache : public Performance {
 
   void setVideoEnabled(bool value);
 
-  bool prepareSequenceReader(Sequence* sequence, Frame targetFrame, DecodingPolicy policy);
+  void prepareSequenceReader(const SequenceReaderFactory* factory, Frame targetFrame);
 
-  std::shared_ptr<SequenceReader> getSequenceReader(Sequence* sequence);
+  std::shared_ptr<SequenceReader> getSequenceReader(const SequenceReaderFactory* factory);
 
   LayerFilter* getFilterCache(LayerStyle* layerStyle);
 
@@ -181,7 +176,14 @@ class RenderCache : public Performance {
   void clearFilterCache(ID uniqueID);
   bool initFilter(Filter* filter);
 
-  void preparePreComposeLayer(PreComposeLayer* layer, DecodingPolicy policy);
+  // text atlas caches:
+  void clearAllTextAtlas();
+  void removeTextAtlas(ID assetID);
+  TextAtlas* getTextAtlas(ID assetID) const;
+
+  void preparePreComposeLayer(PreComposeLayer* layer, DecoderPolicy policy);
   void prepareImageLayer(PAGImageLayer* layer);
+  std::shared_ptr<SequenceReader> getSequenceReaderInternal(const SequenceReaderFactory* factory,
+                                                            DecoderPolicy policy);
 };
 }  // namespace pag

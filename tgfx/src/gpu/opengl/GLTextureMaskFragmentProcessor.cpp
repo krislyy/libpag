@@ -43,6 +43,9 @@ void GLTextureMaskFragmentProcessor::emitCode(EmitArgs& args) {
   fragBuilder->appendTextureLookup((*args.textureSamplers)[0], coordName);
   fragBuilder->codeAppendf(".aaaa * %s", args.inputColor.c_str());
   fragBuilder->codeAppend(";");
+  // 荣耀畅玩 6x may occur unexpected results.
+  fragBuilder->codeAppendf("%s = clamp(%s, 0.0, 1.0);", args.outputColor.c_str(),
+                           args.outputColor.c_str());
   if (textureFP->inverted) {
     fragBuilder->codeAppendf("%s = vec4(1.0) - %s;", args.outputColor.c_str(),
                              args.outputColor.c_str());
@@ -56,14 +59,14 @@ void GLTextureMaskFragmentProcessor::onSetData(const ProgramDataManager& program
     if (textureFP.texture->width() != widthPrev || textureFP.texture->height() != heightPrev) {
       widthPrev = textureFP.texture->width();
       heightPrev = textureFP.texture->height();
-      programDataManager.set2f(scaleUniform, 1.f / static_cast<float>(widthPrev),
-                               1.f / static_cast<float>(heightPrev));
+      programDataManager.set2f(scaleUniform, 1.f / static_cast<float>(*widthPrev),
+                               1.f / static_cast<float>(*heightPrev));
     }
   }
   if (deviceCoordMatrixUniform.isValid()) {
     if (textureFP.deviceCoordMatrix != deviceCoordMatrixPrev) {
       deviceCoordMatrixPrev = textureFP.deviceCoordMatrix;
-      programDataManager.setMatrix(deviceCoordMatrixUniform, deviceCoordMatrixPrev);
+      programDataManager.setMatrix(deviceCoordMatrixUniform, *deviceCoordMatrixPrev);
     }
   }
 }

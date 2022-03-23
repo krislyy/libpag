@@ -209,6 +209,10 @@ export class PAGLayer {
     return this.wasmIns._isPAGFile() as boolean;
   }
 
+  public isDelete(): boolean {
+    return this.wasmIns.isDelete();
+  }
+
   public destroy(): void {
     this.wasmIns.delete();
   }

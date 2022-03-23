@@ -17,14 +17,14 @@
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "Platform.h"
-#include "video/VideoDecoder.h"
+#include "rendering/video/VideoDecoder.h"
 
 namespace pag {
 bool Platform::hasHardwareDecoder() const {
   return false;
 }
 
-std::unique_ptr<VideoDecoder> Platform::makeHardwareDecoder(const VideoConfig&) const {
+std::unique_ptr<VideoDecoder> Platform::makeHardwareDecoder(const VideoFormat&) const {
   return nullptr;
 }
 

@@ -18,10 +18,9 @@
 
 #include "RenderCache.h"
 #include <functional>
-#include <map>
 #include "base/utils/TimeUtil.h"
-#include "base/utils/USE.h"
 #include "base/utils/UniqueID.h"
+#include "core/Clock.h"
 #include "rendering/caches/ImageContentCache.h"
 #include "rendering/caches/LayerCache.h"
 #include "rendering/renderers/FilterRenderer.h"
@@ -91,13 +90,13 @@ void RenderCache::setVideoEnabled(bool value) {
 }
 
 bool RenderCache::initFilter(Filter* filter) {
-  auto startTime = GetTimer();
+  tgfx::Clock clock = {};
   auto result = filter->initialize(getContext());
-  programCompilingTime += GetTimer() - startTime;
+  programCompilingTime += clock.measure();
   return result;
 }
 
-void RenderCache::preparePreComposeLayer(PreComposeLayer* layer, DecodingPolicy policy) {
+void RenderCache::preparePreComposeLayer(PreComposeLayer* layer, DecoderPolicy policy) {
   auto composition = layer->composition;
   if (composition->type() != CompositionType::Video &&
       composition->type() != CompositionType::Bitmap) {
@@ -111,31 +110,38 @@ void RenderCache::preparePreComposeLayer(PreComposeLayer* layer, DecodingPolicy 
   if (compositionFrame < 0) {
     compositionFrame = 0;
   }
-  auto sequence = Sequence::Get(composition);
-  auto sequenceFrame = sequence->toSequenceFrame(compositionFrame);
-  if (prepareSequenceReader(sequence, sequenceFrame, policy)) {
+  auto assetID = composition->uniqueID;
+  usedAssets.insert(assetID);
+  if (composition->staticContent() && hasSnapshot(assetID)) {
+    // 静态的序列帧采用位图的缓存逻辑，如果上层缓存过 Snapshot 就不需要预测。
     return;
   }
-  auto result = sequenceCaches.find(composition->uniqueID);
+  auto sequence = Sequence::Get(composition);
+  auto targetFrame = sequence->toSequenceFrame(compositionFrame);
+  auto result = sequenceCaches.find(assetID);
   if (result != sequenceCaches.end()) {
-    // 循环预测
-    result->second->prepareAsync(sequenceFrame);
+    // 更新循环预测起点。
+    result->second->pendingFirstFrame = targetFrame;
+    return;
+  }
+  SequenceReaderFactory factory(sequence);
+  auto reader = getSequenceReaderInternal(&factory, policy);
+  if (reader) {
+    reader->prepare(targetFrame);
   }
 }
 
 void RenderCache::prepareImageLayer(PAGImageLayer* pagLayer) {
+  std::shared_ptr<Graphic> graphic = nullptr;
   auto pagImage = static_cast<PAGImageLayer*>(pagLayer)->getPAGImage();
-  if (pagImage == nullptr) {
+  if (pagImage != nullptr) {
+    graphic = pagImage->getGraphic();
+  } else {
     auto imageBytes = static_cast<ImageLayer*>(pagLayer->layer)->imageBytes;
-    auto image = ImageContentCache::GetImage(imageBytes);
-    if (image) {
-      prepareImage(imageBytes->uniqueID, image);
-    }
-    return;
+    graphic = ImageContentCache::GetGraphic(imageBytes);
   }
-  auto image = pagImage->getImage();
-  if (image) {
-    prepareImage(pagImage->uniqueID(), image);
+  if (graphic) {
+    graphic->prepare(this);
   }
 }
 
@@ -170,9 +176,8 @@ void RenderCache::prepareFrame() {
   for (auto& item : layerDistances) {
     for (auto pagLayer : item.second) {
       if (pagLayer->layerType() == LayerType::PreCompose) {
-        auto policy = SoftwareToHardwareEnabled() && item.first < MIN_HARDWARE_PREPARE_TIME
-                          ? DecodingPolicy::SoftwareToHardware
-                          : DecodingPolicy::Hardware;
+        auto policy = item.first < MIN_HARDWARE_PREPARE_TIME ? DecoderPolicy::SoftwareToHardware
+                                                             : DecoderPolicy::Hardware;
         preparePreComposeLayer(static_cast<PreComposeLayer*>(pagLayer->layer), policy);
       } else if (pagLayer->layerType() == LayerType::Image) {
         prepareImageLayer(static_cast<PAGImageLayer*>(pagLayer));
@@ -205,6 +210,7 @@ void RenderCache::attachToContext(tgfx::Context* current, bool forHitTest) {
 
 void RenderCache::releaseAll() {
   clearAllSnapshots();
+  clearAllTextAtlas();
   graphicsMemory = 0;
   clearAllSequenceCaches();
   for (auto& item : filterCaches) {
@@ -224,7 +230,7 @@ void RenderCache::detachFromContext() {
   clearExpiredSequences();
   clearExpiredBitmaps();
   clearExpiredSnapshots();
-  auto currentTimestamp = GetTimer();
+  auto currentTimestamp = tgfx::Clock::Now();
   context->purgeResourcesNotUsedIn(currentTimestamp - lastTimestamp);
   lastTimestamp = currentTimestamp;
   context = nullptr;
@@ -293,7 +299,7 @@ void RenderCache::removeSnapshot(ID assetID) {
   snapshotCaches.erase(assetID);
 }
 
-TextAtlas* RenderCache::getTextAtlas(ID assetID) {
+TextAtlas* RenderCache::getTextAtlas(ID assetID) const {
   auto textAtlas = textAtlases.find(assetID);
   if (textAtlas == textAtlases.end()) {
     return nullptr;
@@ -331,6 +337,14 @@ void RenderCache::removeTextAtlas(ID assetID) {
   graphicsMemory -= textAtlas->second->memoryUsage();
   delete textAtlas->second;
   textAtlases.erase(textAtlas);
+}
+
+void RenderCache::clearAllTextAtlas() {
+  for (auto atlas : textAtlases) {
+    graphicsMemory -= atlas.second->memoryUsage();
+    delete atlas.second;
+  }
+  textAtlases.clear();
 }
 
 void RenderCache::clearAllSnapshots() {
@@ -396,81 +410,59 @@ void RenderCache::clearExpiredBitmaps() {
   }
 }
 
-static std::shared_ptr<SequenceReader> MakeSequenceReader(std::shared_ptr<File> file,
-                                                          Sequence* sequence,
-                                                          DecodingPolicy policy) {
-  std::shared_ptr<SequenceReader> reader = nullptr;
-  if (sequence->composition->type() == CompositionType::Video) {
-    if (sequence->composition->staticContent()) {
-      // 全静态的序列帧强制软件解码。
-      policy = DecodingPolicy::Software;
-    }
-    reader = SequenceReader::Make(std::move(file), static_cast<VideoSequence*>(sequence), policy);
-  } else {
-    reader = std::make_shared<BitmapSequenceReader>(std::move(file),
-                                                    static_cast<BitmapSequence*>(sequence));
+//===================================== sequence caches =====================================
+
+void RenderCache::prepareSequenceReader(const SequenceReaderFactory* factory, Frame targetFrame) {
+  if (factory == nullptr) {
+    return;
+  }
+  if (factory->staticContent() && hasSnapshot(factory->assetID())) {
+    // 静态的序列帧采用位图的缓存逻辑，如果上层缓存过 Snapshot 就不需要预测。
+    return;
+  }
+  auto reader = getSequenceReaderInternal(factory, DecoderPolicy::SoftwareToHardware);
+  if (reader) {
+    reader->prepare(targetFrame);
+  }
+}
+
+std::shared_ptr<SequenceReader> RenderCache::getSequenceReader(
+    const SequenceReaderFactory* factory) {
+  if (factory == nullptr) {
+    return nullptr;
+  }
+  auto reader = getSequenceReaderInternal(factory, DecoderPolicy::SoftwareToHardware);
+  if (reader && factory->staticContent()) {
+    // There is no need to cache a reader for the static sequence, it has already been cached as
+    // a snapshot. We get here because the reader was created by prepare() methods.
+    sequenceCaches.erase(factory->assetID());
   }
   return reader;
 }
 
-//===================================== sequence caches =====================================
-
-bool RenderCache::prepareSequenceReader(Sequence* sequence, Frame targetFrame,
-                                        DecodingPolicy policy) {
-  auto composition = sequence->composition;
-  if (!_videoEnabled && composition->type() == CompositionType::Video) {
-    return false;
-  }
-  usedAssets.insert(composition->uniqueID);
-  auto staticComposition = composition->staticContent();
-  if (sequenceCaches.count(composition->uniqueID) != 0) {
-#ifdef PAG_BUILD_FOR_WEB
-    sequenceCaches[composition->uniqueID]->prepareAsync(targetFrame);
-#endif
-    return false;
-  }
-  if (staticComposition && hasSnapshot(composition->uniqueID)) {
-    // 静态的序列帧采用位图的缓存逻辑，如果上层缓存过 Snapshot 就不需要预测。
-    return false;
-  }
-  auto file = stage->getFileFromReferenceMap(composition->uniqueID);
-  auto reader = MakeSequenceReader(file, sequence, policy);
-  sequenceCaches[composition->uniqueID] = reader;
-  reader->prepareAsync(targetFrame);
-  return true;
-}
-
-std::shared_ptr<SequenceReader> RenderCache::getSequenceReader(Sequence* sequence) {
-  if (sequence == nullptr) {
+std::shared_ptr<SequenceReader> RenderCache::getSequenceReaderInternal(
+    const SequenceReaderFactory* factory, DecoderPolicy policy) {
+  if (factory == nullptr) {
     return nullptr;
   }
-  auto composition = sequence->composition;
-  if (!_videoEnabled && composition->type() == CompositionType::Video) {
+  if (!_videoEnabled && factory->isVideo()) {
     return nullptr;
   }
-  auto compositionID = composition->uniqueID;
-  usedAssets.insert(compositionID);
-  auto staticComposition = sequence->composition->staticContent();
+  auto assetID = factory->assetID();
+  usedAssets.insert(assetID);
   std::shared_ptr<SequenceReader> reader = nullptr;
-  auto result = sequenceCaches.find(compositionID);
+  auto result = sequenceCaches.find(assetID);
   if (result != sequenceCaches.end()) {
     reader = result->second;
-    if (reader->getSequence() != sequence) {
-      clearSequenceCache(compositionID);
-      reader = nullptr;
-    } else if (staticComposition) {
-      // 完全静态的序列帧是预测生成的，第一次访问时就可以移除，上层会进行缓存。
-      sequenceCaches.erase(result);
-    }
   }
   if (reader == nullptr) {
-    auto file = stage->getFileFromReferenceMap(composition->uniqueID);
-    reader = MakeSequenceReader(file, sequence,
-                                SoftwareToHardwareEnabled() ? DecodingPolicy::SoftwareToHardware
-                                                            : DecodingPolicy::Hardware);
-    if (reader && !staticComposition) {
-      // 完全静态的序列帧不用缓存。
-      sequenceCaches[compositionID] = reader;
+    auto file = stage->getFileFromReferenceMap(assetID);
+    if (factory->staticContent()) {
+      policy = DecoderPolicy::Software;
+    }
+    reader = factory->makeReader(file, policy);
+    if (reader) {
+      sequenceCaches[assetID] = reader;
     }
   }
   return reader;

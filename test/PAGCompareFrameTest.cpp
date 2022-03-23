@@ -21,10 +21,9 @@
 #include <map>
 #include <thread>
 #include <vector>
-#include "TestUtils.h"
-#include "base/utils/GetTimer.h"
 #include "base/utils/Task.h"
 #include "base/utils/TimeUtil.h"
+#include "core/Clock.h"
 #include "framework/pag_test.h"
 #include "framework/utils/PAGTestUtils.h"
 #include "framework/utils/Semaphore.h"
@@ -35,6 +34,8 @@ namespace pag {
 using namespace tgfx;
 using nlohmann::json;
 
+static constexpr float MAX_FRAME_SIZE = 360.0f;
+static constexpr int MAX_THREADS = 6;
 static constexpr bool PrintPerformance = false;
 
 struct RenderCost {
@@ -66,30 +67,32 @@ class CompareFrameTask : public Executor {
   bool success = false;
 
   void execute() override {
-    success = Baseline::Compare(
-        pixelBuffer, "PAGCompareFrameTest/" + fileName + "/" + std::to_string(_currentFrame));
+
+    success = Baseline::Compare(pixelBuffer,
+                                "PAGCompareFrameTest/" + fileName + "/" + ToString(_currentFrame));
   }
 };
 
 void CompareFileFrames(Semaphore* semaphore, std::string pagPath) {
-  auto timer = GetTimer();
+  Clock fileClock = {};
   auto fileName = pagPath.substr(pagPath.rfind('/') + 1, pagPath.size());
   auto pagFile = PAGFile::Load(pagPath);
   ASSERT_NE(pagFile, nullptr);
-  auto width = pagFile->width();
-  auto height = pagFile->height();
-  if (std::min(width, height) > 360) {
+  auto width = static_cast<float>(pagFile->width());
+  auto height = static_cast<float>(pagFile->height());
+  if (std::max(width, height) > MAX_FRAME_SIZE) {
     if (width > height) {
-      width =
-          static_cast<int>(ceilf(static_cast<float>(width) * 360.0f / static_cast<float>(height)));
-      height = 360;
+      height = static_cast<int>(
+          ceilf(static_cast<float>(height) * MAX_FRAME_SIZE / static_cast<float>(width)));
+      width = MAX_FRAME_SIZE;
     } else {
-      height =
-          static_cast<int>(ceilf(static_cast<float>(height) * 360.0f / static_cast<float>(width)));
-      width = 360;
+      width = static_cast<int>(
+          ceilf(static_cast<float>(width) * MAX_FRAME_SIZE / static_cast<float>(height)));
+      height = MAX_FRAME_SIZE;
     }
   }
-  auto pagSurface = PAGSurface::MakeOffscreen(width, height);
+  auto pagSurface =
+      PAGSurface::MakeOffscreen(static_cast<int>(roundf(width)), static_cast<int>(roundf(height)));
   ASSERT_NE(pagSurface, nullptr);
   auto pagPlayer = std::make_shared<PAGPlayer>();
   pagPlayer->setSurface(pagSurface);
@@ -106,9 +109,9 @@ void CompareFileFrames(Semaphore* semaphore, std::string pagPath) {
     if (lastTask == nullptr) {
       return;
     }
-    auto startTime = GetTimer();
+    Clock clock = {};
     auto task = static_cast<CompareFrameTask*>(lastTask->wait());
-    auto compareCost = GetTimer() - startTime;
+    auto compareCost = clock.measure();
     if (currentFrame == task->currentFrame()) {
       auto& cost = performanceMap[currentFrame];
       cost.compareCost = compareCost;
@@ -124,9 +127,9 @@ void CompareFileFrames(Semaphore* semaphore, std::string pagPath) {
     auto changed = pagPlayer->flush();
     if (changed) {
       RenderCost cost = {};
-      auto starTime = GetTimer();
+      Clock clock = {};
       currentSnapshot = MakeSnapshot(pagSurface);
-      cost.readPixelsCost = GetTimer() - starTime;
+      cost.readPixelsCost = clock.measure();
       auto cache = pagPlayer->renderCache;
       cost.totalTime = cache->totalTime + cost.readPixelsCost;
       cost.performance = cache->getPerformanceString();
@@ -143,7 +146,7 @@ void CompareFileFrames(Semaphore* semaphore, std::string pagPath) {
   }
   CompareFrame(currentFrame - 1);
 
-  auto cost = static_cast<float>(GetTimer() - timer) / 1000000;
+  auto cost = static_cast<float>(fileClock.measure()) / 1000000;
   if (PrintPerformance) {
     LOGI(
         "========================================== %s : start"
@@ -174,11 +177,6 @@ PAG_TEST(PAGFrameCompareTest, RenderFiles) {
   std::vector<std::string> files;
   GetAllPAGFiles("../resources/compare", files);
 
-  // 强制仅测试指定的文件
-  //  files.clear();
-  //  files.push_back("../resources/compare/vt_zhongyudd.pag");
-
-  static const int MAX_THREADS = 6;
   Semaphore semaphore(MAX_THREADS);
   std::vector<std::thread> threads = {};
   for (auto& file : files) {

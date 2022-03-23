@@ -13,6 +13,7 @@ import { PAGLayer } from './pag-layer';
 import { PAGComposition } from './pag-composition';
 import { NativeImage } from './core/native-image';
 import { WebMask } from './core/web-mask';
+import { PAGTextLayer } from './pag-text-layer';
 
 declare global {
   interface Window {
@@ -37,7 +38,20 @@ export interface PAG extends EmscriptenModule {
   _PAGComposition: {
     _Make: (width: number, height: number) => any;
   };
-  _SetFallbackFontNames: (fontName: any) => void;
+  _PAGTextLayer: {
+    _Make: ((duration: number, text: string, fontSize: number, fontFamily: string, fontStyle: string) => any) &
+      ((duration: number, textDocumentHandle: TextDocument) => any);
+  };
+  _PAGImageLayer: {
+    _Make: (width: number, height: number, duration: number) => any;
+  };
+  _PAGSolidLayer: {
+    _Make: (duration: number, width: number, height: number, solidColor: Color, opacity: number) => any;
+  };
+  _PAGFont: {
+    _create: (fontFamily: string, fontStyle: string) => any;
+    _SetFallbackFontNames: (fontName: any) => void;
+  };
   VectorString: any;
   webAssemblyQueue: WebAssemblyQueue;
   PAGPlayer: typeof PAGPlayer;
@@ -48,13 +62,13 @@ export interface PAG extends EmscriptenModule {
   PAGLayer: typeof PAGLayer;
   PAGComposition: typeof PAGComposition;
   PAGSurface: typeof PAGSurface;
+  PAGTextLayer: typeof PAGTextLayer;
   NativeImage: typeof NativeImage;
   WebMask: typeof WebMask;
   ScalerContext: typeof ScalerContext;
   VideoReader: typeof VideoReader;
   traceImage: (info: { width: number; height: number }, pixels: Uint8Array, tag: string) => void;
   GL: EmscriptenGL;
-  LayerType: typeof LayerType;
 }
 
 export interface EmscriptenGL {
@@ -358,10 +372,42 @@ export declare class TextDocument {
   private constructor();
 }
 
-export declare class Vector<T> {
-  public get: (index: number) => T;
-
-  public size: () => number;
-
+export declare class PAGVideoRange {
   private constructor();
+  /**
+   * The start time of the source video, in microseconds.
+   */
+  public startTime(): number;
+  /**
+   * The end time of the source video (not included), in microseconds.
+   */
+  public endTime(): number;
+  /**
+   * The duration for playing after applying speed.
+   */
+  public playDuration(): number;
+  /**
+   * Indicates whether the video should play backward.
+   */
+  public reversed(): boolean;
+}
+
+export declare class Vector<T> {
+  private constructor();
+  /**
+   * Get item from Vector by index.
+   */
+  public get(index: number): T;
+  /**
+   * Push item into Vector.
+   */
+  public push_back(value: T): void;
+  /**
+   * Get item number in Vector.
+   */
+  public size(): number;
+  /**
+   * Delete Vector instance.
+   */
+  public delete(): void;
 }

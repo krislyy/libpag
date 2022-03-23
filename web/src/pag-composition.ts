@@ -1,6 +1,7 @@
 import { PAG, Vector, Marker } from './types';
 import { PAGLayer } from './pag-layer';
 import { wasmAwaitRewind } from './utils/decorators';
+import { proxyVector } from './utils/type-utils';
 
 @wasmAwaitRewind
 export class PAGComposition extends PAGLayer {
@@ -118,7 +119,7 @@ export class PAGComposition extends PAGLayer {
     this.wasmIns._swapLayerAt(index1, index2);
   }
   /**
-   * The audio data of this composition, which is an AAC audio in an MPEG-4 container format.
+   * The audio data of this composition, which is an AAC audio in an MPEG-4 container.
    */
   public audioBytes(): Uint8Array {
     return this.wasmIns._audioBytes() as Uint8Array;
@@ -138,15 +139,15 @@ export class PAGComposition extends PAGLayer {
   /**
    * Returns an array of layers that match the specified layer name.
    */
-  public getLayersByName(layerName: string): Vector<any> {
-    return this.wasmIns._getLayersByName(layerName) as Vector<any>;
+  public getLayersByName(layerName: string): Vector<PAGLayer> {
+    return proxyVector(this.wasmIns._getLayersByName(layerName) as Vector<any>, PAGLayer);
   }
   /**
    * Returns an array of layers that lie under the specified point. The point is in pixels and from
    * this PAGComposition's local coordinates.
    */
-  public getLayersUnderPoint(localX: number, localY: number): Vector<any> {
-    return this.wasmIns._getLayersUnderPoint(localX, localY);
+  public getLayersUnderPoint(localX: number, localY: number): Vector<PAGLayer> {
+    return proxyVector(this.wasmIns._getLayersUnderPoint(localX, localY) as Vector<any>, PAGLayer);
   }
 
   public destroy(): void {

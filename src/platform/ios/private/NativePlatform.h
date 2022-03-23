@@ -23,6 +23,6 @@
 namespace pag {
 class NativePlatform : public CocoaPlatform {
  public:
-  std::unique_ptr<VideoDecoder> makeHardwareDecoder(const VideoConfig& config) const override;
+  std::unique_ptr<VideoDecoder> makeHardwareDecoder(const VideoFormat& format) const override;
 };
 }  // namespace pag

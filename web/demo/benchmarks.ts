@@ -1,14 +1,23 @@
 import { PAGInit } from '../src/pag';
 import { PAGComposition } from '../src/pag-composition';
 import { PAGFile } from '../src/pag-file';
+import { PAGFont } from '../src/pag-font';
 import { PAGImage } from '../src/pag-image';
+import { PAGImageLayer } from '../src/pag-image-layer';
 import { PAGLayer } from '../src/pag-layer';
+import { PAGSolidLayer } from '../src/pag-solid-layer';
+import { PAGSurface } from '../src/pag-surface';
+import { PAGTextLayer } from '../src/pag-text-layer';
 import * as types from '../src/types';
 
 let PAG: types.PAG;
+let textPagArrayBuffer: ArrayBuffer;
+let imagePagArrayBuffer: ArrayBuffer;
 
 window.onload = async () => {
   PAG = await PAGInit({ locateFile: (file: string) => '../lib/' + file });
+  textPagArrayBuffer = await fetch('./assets/test2.pag').then((res) => res.arrayBuffer());
+  imagePagArrayBuffer = await fetch('./assets/AudioMarker.pag').then((res) => res.arrayBuffer());
   console.log('====== wasm loaded! ======', PAG);
   console.log('====== PAGImage test ======');
   await PAGImageTest();
@@ -17,7 +26,17 @@ window.onload = async () => {
   console.log('====== PAGComposition test ======');
   await PAGCompositionTest();
   console.log('====== PAGLayer test ======');
-  await PAGLayerTest();
+  PAGLayerTest();
+  console.log('====== PAGTextLayer test ======');
+  PAGTextLayerTest();
+  console.log('====== PAGImageLayerTest test ======');
+  await PAGImageLayerTest();
+  console.log('====== PAGSolidLayerTest test ======');
+  await PAGSolidLayerTest();
+  console.log('====== PAGSurface test ======');
+  await PAGSurfaceTest();
+  console.log('====== Vector test ======');
+  VectorTest();
 };
 
 let pagImage: PAGImage;
@@ -52,8 +71,7 @@ const PAGImageTest = async () => {
 let pagFile: PAGFile;
 const PAGFileTest = async () => {
   console.log('PAGFile MaxSupportedTagLevel: ', PAGFile.maxSupportedTagLevel());
-  const arrayBuffer = await fetch('./assets/test2.pag').then((res) => res.arrayBuffer());
-  pagFile = (await PAGFile.load(arrayBuffer)) as PAGFile;
+  pagFile = (await PAGFile.load(textPagArrayBuffer)) as PAGFile;
   console.log('PAGFile: ', pagFile);
   console.log('PAGFile tagLevel: ', pagFile.tagLevel());
   console.log('PAGFile numTexts: ', pagFile.numTexts());
@@ -74,6 +92,7 @@ const PAGFileTest = async () => {
   // Todo(zenoslin) test
   // pagFile.replaceImage(0, pagImage);
   console.log('PAGFile getLayersByEditableIndex: ', pagFile.getLayersByEditableIndex(0, types.LayerType.Text));
+
   console.log('PAGFile timeStretchMode: ', pagFile.timeStretchMode());
   pagFile.setTimeStretchMode(types.PAGTimeStretchMode.Repeat);
   if (pagFile.timeStretchMode() === types.PAGTimeStretchMode.Repeat) {
@@ -89,11 +108,13 @@ const PAGFileTest = async () => {
   }
   console.log('PAGFile copyOriginal: ', pagFile.copyOriginal());
 };
+
 let pagComposition: PAGComposition;
+let imagePagFile: PAGFile;
 const PAGCompositionTest = async () => {
   console.log('PAGComposition Make:', PAGComposition.Make(100, 100));
-  const arrayBuffer = await fetch('./assets/AudioMarker.pag').then((res) => res.arrayBuffer());
-  pagComposition = (await PAGFile.load(arrayBuffer)) as PAGComposition;
+  imagePagFile = (await PAGFile.load(imagePagArrayBuffer)) as PAGFile;
+  pagComposition = imagePagFile as PAGComposition;
   console.log('PAGComposition: ', pagComposition);
   console.log('PAGComposition width: ', pagComposition.width());
   console.log('PAGComposition height: ', pagComposition.height());
@@ -175,9 +196,7 @@ const PAGCompositionTest = async () => {
 };
 
 let pagLayer: PAGLayer;
-const PAGLayerTest = async () => {
-  const arrayBuffer = await fetch('./assets/test2.pag').then((res) => res.arrayBuffer());
-  const pagFile = PAGFile.loadFromBuffer(arrayBuffer);
+const PAGLayerTest = () => {
   pagLayer = pagFile.getLayerAt(0);
   console.log('PAGLayer: ', pagLayer);
   console.log('PAGLayer uniqueID: ', pagLayer.uniqueID());
@@ -263,4 +282,129 @@ const PAGLayerTest = async () => {
     console.error(`PAGLayer excludedFromTimeline failed!`);
   }
   console.log('PAGLayer isPAGFile: ', pagLayer.isPAGFile());
+};
+
+let pagTextLayer: PAGTextLayer;
+const PAGTextLayerTest = () => {
+  pagTextLayer = pagFile.getLayersByEditableIndex(0, types.LayerType.Text).get(0) as PAGTextLayer;
+  console.log('PAGTextLayer: ', pagTextLayer);
+  const fillColor = pagTextLayer.fillColor();
+  console.log('PAGTextLayer fillColor : ', fillColor);
+  fillColor.red = 255;
+  pagTextLayer.setFillColor(fillColor);
+  if (pagTextLayer.fillColor().red === 255) {
+    console.log(`PAGFile setFillColor succeed!`);
+  } else {
+    console.error(`PAGFile setFillColor failed!`);
+  }
+  console.log('PAGTextLayer font : ', pagTextLayer.font());
+  const font = PAGFont.create('Arial', 'Regular');
+  pagTextLayer.setFont(font);
+  if (pagTextLayer.font().fontFamily === 'Arial') {
+    console.log(`PAGFile setFont succeed!`);
+  } else {
+    console.error(`PAGFile setFont failed!`);
+  }
+  let strokeColor = pagTextLayer.strokeColor();
+  console.log('PAGTextLayer strokeColor : ', strokeColor);
+  strokeColor.red = 255;
+  pagTextLayer.setStrokeColor(strokeColor);
+  if (pagTextLayer.strokeColor().red === 255) {
+    console.log(`PAGFile setStrokeColor succeed!`);
+  } else {
+    console.error(`PAGFile setStrokeColor failed!`);
+  }
+  console.log('PAGTextLayer text : ', pagTextLayer.text());
+  pagTextLayer.setText('Hello PAG');
+  if (pagTextLayer.text() === 'Hello PAG') {
+    console.log(`PAGFile setText succeed!`);
+  } else {
+    console.error(`PAGFile setText failed!`);
+  }
+  pagTextLayer.reset();
+  if (pagTextLayer.text() === '过去的一年里最开心的瞬间') {
+    console.log(`PAGFile reset succeed!`);
+  } else {
+    console.error(`PAGFile reset failed!`);
+  }
+};
+
+let pagImageLayer: PAGImageLayer;
+const PAGImageLayerTest = async () => {
+  console.log('PAGImageLayer Make: ', PAGImageLayer.Make(100, 100, 1000));
+  imagePagFile.destroy();
+  imagePagFile = (await PAGFile.load(imagePagArrayBuffer)) as PAGFile;
+  pagImageLayer = imagePagFile.getLayersByEditableIndex(0, types.LayerType.Image).get(0) as PAGImageLayer;
+  console.log('PAGImageLayer: ', pagImageLayer);
+  console.log('PAGImageLayer contentDuration : ', pagImageLayer.contentDuration());
+  console.log('PAGImageLayer getVideoRanges : ', pagImageLayer.getVideoRanges());
+  console.log('PAGImageLayer replaceImage : ', pagImageLayer.replaceImage(pagImage));
+  console.log('PAGImageLayer layerTimeToContent : ', pagImageLayer.layerTimeToContent(0));
+  console.log('PAGImageLayer contentTimeToLayer : ', pagImageLayer.contentTimeToLayer(0));
+};
+
+let pagSolidLayer: PAGSolidLayer;
+const PAGSolidLayerTest = async () => {
+  console.log('PAGSolidLayer Make: ', PAGSolidLayer.Make(1000, 100, 100, { red: 255, green: 255, blue: 255 }, 1));
+  const layerCount = pagFile.numChildren();
+  for (let i = 0; i < layerCount; i++) {
+    const pagLayer = pagFile.getLayerAt(i);
+    if (pagLayer.layerType() === types.LayerType.Solid) {
+      pagSolidLayer = new PAGSolidLayer(pagLayer.wasmIns);
+      break;
+    }
+  }
+  console.log('PAGSolidLayer: ', pagSolidLayer);
+  console.log('PAGSolidLayer solidColor: ', pagSolidLayer.solidColor());
+  pagSolidLayer.setSolidColor({ red: 255, green: 255, blue: 255 });
+  if (pagSolidLayer.solidColor().red === 255) {
+    console.log(`PAGFile setSolidColor succeed!`);
+  } else {
+    console.error(`PAGFile setSolidColor failed!`);
+  }
+};
+
+let pagSurface: PAGSurface;
+const PAGSurfaceTest = () => {
+  pagSurface = PAGSurface.FromCanvas('#pag');
+  console.log('PAGSurface FromCanvas:', pagSurface);
+  const canvasElement = document.getElementById('pag') as HTMLCanvasElement;
+  const gl = canvasElement.getContext('webgl');
+  if (gl instanceof WebGLRenderingContext) {
+    const contextID = PAGSurface.module.GL.registerContext(gl, { majorVersion: 1, minorVersion: 0 });
+    PAGSurface.module.GL.makeContextCurrent(contextID);
+    console.log(
+      'PAGSurface FromFrameBuffer:',
+      PAGSurface.module.PAGSurface.FromFrameBuffer(0, canvasElement.width, canvasElement.height, true),
+    );
+  } else {
+    console.error(`PAGSurface FromFrameBuffer failed!`);
+  }
+  console.log('PAGSurface width:', pagSurface.width());
+  console.log('PAGSurface height:', pagSurface.height());
+};
+
+const VectorTest = async () => {
+  const testPagFile = (await PAGFile.load(imagePagArrayBuffer)) as PAGFile;
+  const layers = testPagFile.getLayersByEditableIndex(0, types.LayerType.Image) as types.Vector<PAGImageLayer>;
+  console.log('Vector.size', layers.size());
+  const layer = layers.get(0);
+  console.log('Vector.get', layer);
+  const pagImageLayer = PAGImageLayer.Make(100, 100, 1000);
+  layers.push_back(pagImageLayer);
+  if (layers.size() === 2) {
+    console.log(`Vector push_back succeed!`);
+  } else {
+    console.error(`Vector push_back succeed!`);
+  }
+  layers.delete();
+
+  // console.log('array[0]', layers[0]);
+  // console.log('array[1]', layers[1]);
+  // layers[1] = pagImageLayer;
+  // console.log('array[1]', layers[1]);
+  // layers.push(pagImageLayer);
+  // layers.pop();
+  // layers.delete();
+  // console.log('array', layers);
 };

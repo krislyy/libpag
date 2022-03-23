@@ -39,7 +39,7 @@ EMSCRIPTEN_BINDINGS(pag) {
                   return static_cast<int>(pagLayer.uniqueID());
                 }))
       .function("_layerType", optional_override([](PAGLayer& pagLayer) {
-                  return static_cast<LayerType>(pagLayer.layerType());
+                  return static_cast<int>(pagLayer.layerType());
                 }))
       .function("_layerName", &PAGLayer::layerName)
       .function("_matrix",
@@ -55,7 +55,17 @@ EMSCRIPTEN_BINDINGS(pag) {
       .function("_setVisible", &PAGLayer::setVisible)
       .function("_editableIndex", &PAGLayer::editableIndex)
       .function("_parent", &PAGLayer::parent)
-      .function("_markers", &PAGLayer::markers)
+      .function("_markers", optional_override([](PAGLayer& pagLayer) {
+                  std::vector<Marker> result = {};
+                  for (auto marker_ptr : pagLayer.markers()) {
+                    Marker marker;
+                    marker.startTime = marker_ptr->startTime;
+                    marker.duration = marker_ptr->duration;
+                    marker.comment = marker_ptr->comment;
+                    result.push_back(marker);
+                  }
+                  return result;
+                }))
       .function("_globalToLocalTime", optional_override([](PAGLayer& pagLayer, int globalTime) {
                   return static_cast<int>(pagLayer.globalToLocalTime(globalTime));
                 }))
@@ -92,6 +102,59 @@ EMSCRIPTEN_BINDINGS(pag) {
       .function("_setExcludedFromTimeline", &PAGLayer::setExcludedFromTimeline)
       .function("_isPAGFile", &PAGLayer::isPAGFile);
 
+  class_<PAGSolidLayer, base<PAGLayer>>("_PAGSolidLayer")
+      .smart_ptr<std::shared_ptr<PAGSolidLayer>>("_PAGSolidLayer")
+      .class_function("_Make", optional_override([](int duration, int width, int height,
+                                                    Color solidColor, int opacity) {
+                        return PAGSolidLayer::Make(static_cast<int64_t>(duration), width, height,
+                                                   solidColor, opacity);
+                      }))
+      .function("_solidColor", &PAGSolidLayer::solidColor)
+      .function("_setSolidColor", &PAGSolidLayer::setSolidColor);
+
+  class_<PAGImageLayer, base<PAGLayer>>("_PAGImageLayer")
+      .smart_ptr<std::shared_ptr<PAGImageLayer>>("_PAGImageLayer")
+      .class_function("_Make", optional_override([](int width, int height, int duration) {
+                        return PAGImageLayer::Make(width, height, static_cast<int64_t>(duration));
+                      }))
+      .function("_contentDuration", optional_override([](PAGImageLayer& pagImageLayer) {
+                  return static_cast<int>(pagImageLayer.contentDuration());
+                }))
+      .function("_getVideoRanges", &PAGImageLayer::getVideoRanges)
+      .function("_replaceImage", &PAGImageLayer::replaceImage)
+      .function("_layerTimeToContent",
+                optional_override([](PAGImageLayer& pagImageLayer, int layerTime) {
+                  return static_cast<int>(pagImageLayer.layerTimeToContent(layerTime));
+                }))
+      .function("_contentTimeToLayer",
+                optional_override([](PAGImageLayer& pagImageLayer, int contentTime) {
+                  return static_cast<int>(pagImageLayer.contentTimeToLayer(contentTime));
+                }));
+
+  class_<PAGTextLayer, base<PAGLayer>>("_PAGTextLayer")
+      .smart_ptr<std::shared_ptr<PAGTextLayer>>("_PAGTextLayer")
+      .class_function("_Make", optional_override([](int duration, std::string text, float fontSize,
+                                                    std::string fontFamily, std::string fontStyle) {
+                        return PAGTextLayer::Make(static_cast<int64_t>(duration), text, fontSize,
+                                                  fontFamily, fontStyle);
+                      }))
+      .class_function(
+          "_Make",
+          optional_override([](int duration, std::shared_ptr<TextDocument> textDocumentHandle) {
+            return PAGTextLayer::Make(static_cast<int64_t>(duration), textDocumentHandle);
+          }))
+      .function("_fillColor", &PAGTextLayer::fillColor)
+      .function("_setFillColor", &PAGTextLayer::setFillColor)
+      .function("_font", &PAGTextLayer::font)
+      .function("_setFont", &PAGTextLayer::setFont)
+      .function("_fontSize", &PAGTextLayer::fontSize)
+      .function("_setFontSize", &PAGTextLayer::setFontSize)
+      .function("_strokeColor", &PAGTextLayer::strokeColor)
+      .function("_setStrokeColor", &PAGTextLayer::setStrokeColor)
+      .function("_text", &PAGTextLayer::text)
+      .function("_setText", &PAGTextLayer::setText)
+      .function("_reset", &PAGTextLayer::reset);
+
   class_<PAGComposition, base<PAGLayer>>("_PAGComposition")
       .smart_ptr<std::shared_ptr<PAGComposition>>("_PAGComposition")
       .class_function("_Make", PAGComposition::Make)
@@ -118,7 +181,17 @@ EMSCRIPTEN_BINDINGS(pag) {
                   }
                   return val(typed_memory_view(result->length(), result->data()));
                 }))
-      .function("_audioMarkers", &PAGComposition::audioMarkers)
+      .function("_audioMarkers", optional_override([](PAGComposition& pagComposition) {
+                  std::vector<Marker> result = {};
+                  for (auto marker_ptr : pagComposition.audioMarkers()) {
+                    Marker marker;
+                    marker.startTime = marker_ptr->startTime;
+                    marker.duration = marker_ptr->duration;
+                    marker.comment = marker_ptr->comment;
+                    result.push_back(marker);
+                  }
+                  return result;
+                }))
       .function("_audioStartTime", optional_override([](PAGComposition& pagComposition) {
                   return static_cast<int>(pagComposition.audioStartTime());
                 }))
@@ -139,8 +212,9 @@ EMSCRIPTEN_BINDINGS(pag) {
       .function("_replaceText", &PAGFile::replaceText)
       .function("_replaceImage", &PAGFile::replaceImage)
       .function("_getLayersByEditableIndex",
-                optional_override([](PAGFile& pagFile, int editableIndex, LayerType layerType) {
-                  return pagFile.getLayersByEditableIndex(editableIndex, layerType);
+                optional_override([](PAGFile& pagFile, int editableIndex, int layerType) {
+                  return pagFile.getLayersByEditableIndex(editableIndex,
+                                                          static_cast<LayerType>(layerType));
                 }))
       .function("_timeStretchMode", &PAGFile::timeStretchMode)
       .function("_setTimeStretchMode", &PAGFile::setTimeStretchMode)
@@ -186,7 +260,7 @@ EMSCRIPTEN_BINDINGS(pag) {
                       }))
       .class_function("_FromNativeImage", optional_override([](val nativeImage) {
                         return std::static_pointer_cast<PAGImage>(
-                            StillImage::FromImage(tgfx::NativeImage::MakeFrom(nativeImage)));
+                            StillImage::MakeFrom(tgfx::NativeImage::MakeFrom(nativeImage)));
                       }))
       .function("_width", &PAGImage::width)
       .function("_height", &PAGImage::height)
@@ -248,6 +322,16 @@ EMSCRIPTEN_BINDINGS(pag) {
                   return static_cast<int>(pagPlayer.graphicsMemory());
                 }));
 
+  class_<PAGFont>("_PAGFont")
+      .smart_ptr<std::shared_ptr<PAGFont>>("_PAGFont")
+      .class_function("_create",
+                      optional_override([](std::string fontFamily, std::string fontStyle) {
+                        return pag::PAGFont(fontFamily, fontStyle);
+                      }))
+      .class_function("_SetFallbackFontNames", PAGFont::SetFallbackFontNames)
+      .property("fontFamily", &PAGFont::fontFamily)
+      .property("fontStyle", &PAGFont::fontStyle);
+
   class_<tgfx::ImageInfo>("ImageInfo")
       .property("width", &tgfx::ImageInfo::width)
       .property("height", &tgfx::ImageInfo::height)
@@ -296,6 +380,18 @@ EMSCRIPTEN_BINDINGS(pag) {
       .property("join", &tgfx::Stroke::join)
       .property("miterLimit", &tgfx::Stroke::miterLimit);
 
+  class_<PAGVideoRange>("PAGVideoRange")
+      .function("startTime", optional_override([](PAGVideoRange& pagVideoRange) {
+                  return static_cast<int>(pagVideoRange.startTime());
+                }))
+      .function("endTime", optional_override([](PAGVideoRange& pagVideoRange) {
+                  return static_cast<int>(pagVideoRange.endTime());
+                }))
+      .function("playDuration", optional_override([](PAGVideoRange& pagVideoRange) {
+                  return static_cast<int>(pagVideoRange.playDuration());
+                }))
+      .function("reversed", &PAGVideoRange::reversed);
+
   value_object<tgfx::FontMetrics>("FontMetrics")
       .field("ascent", &tgfx::FontMetrics::ascent)
       .field("descent", &tgfx::FontMetrics::descent)
@@ -316,8 +412,16 @@ EMSCRIPTEN_BINDINGS(pag) {
       .field("blue", &Color::blue);
 
   value_object<Marker>("Marker")
-      .field("startTime", &Marker::startTime)
-      .field("duration", &Marker::duration)
+      .field("startTime", optional_override([](const Marker& marker) {
+               return static_cast<int>(marker.startTime);
+             }),
+             optional_override(
+                 [](Marker& marker, int value) { marker.startTime = static_cast<int64_t>(value); }))
+      .field("duration", optional_override([](const Marker& marker) {
+               return static_cast<int>(marker.duration);
+             }),
+             optional_override(
+                 [](Marker& marker, int value) { marker.duration = static_cast<int64_t>(value); }))
       .field("comment", &Marker::comment);
 
   enum_<tgfx::PathFillType>("PathFillType")
@@ -332,15 +436,6 @@ EMSCRIPTEN_BINDINGS(pag) {
       .value("RGBA_8888", ColorType::RGBA_8888)
       .value("BGRA_8888", ColorType::BGRA_8888);
 
-  enum_<LayerType>("LayerType")
-      .value("Unknown", LayerType::Unknown)
-      .value("Null", LayerType::Null)
-      .value("Solid", LayerType::Solid)
-      .value("Text", LayerType::Text)
-      .value("Shape", LayerType::Shape)
-      .value("Image", LayerType::Image)
-      .value("PreCompose", LayerType::PreCompose);
-
   enum_<tgfx::LineCap>("Cap")
       .value("Miter", tgfx::LineCap::Butt)
       .value("Round", tgfx::LineCap::Round)
@@ -354,9 +449,6 @@ EMSCRIPTEN_BINDINGS(pag) {
   register_vector<std::shared_ptr<PAGLayer>>("VectorPAGLayer");
   register_vector<std::string>("VectorString");
   register_vector<tgfx::Point>("VectorPoint");
-  register_vector<const Marker*>("VectorMarker");
-
-  function("_SetFallbackFontNames", optional_override([](std::vector<std::string> fontNames) {
-             PAGFont::SetFallbackFontNames(fontNames);
-           }));
+  register_vector<Marker>("VectorMarker");
+  register_vector<PAGVideoRange>("VectorPAGVideoRange");
 }

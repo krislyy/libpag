@@ -22,12 +22,12 @@
 #include <VideoToolbox/VideoToolbox.h>
 #include <list>
 #include <unordered_map>
-#include "video/VideoDecoder.h"
+#include "rendering/video/VideoDecoder.h"
 
 namespace pag {
 class GPUDecoder : public VideoDecoder {
  public:
-  explicit GPUDecoder(const VideoConfig& config);
+  explicit GPUDecoder(const VideoFormat& format);
 
   ~GPUDecoder() override;
 
